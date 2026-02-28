@@ -17,6 +17,8 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked,id=npm-cache \
     --mount=type=bind,source=package.json,target=package.json \
     --mount=type=bind,source=package-lock.json,target=package-lock.json \
     --mount=type=bind,source=packages/playwright-mcp/package.json,target=packages/playwright-mcp/package.json \
+    --mount=type=bind,source=playwright/packages/playwright,target=playwright/packages/playwright \
+    --mount=type=bind,source=playwright/packages/playwright-core,target=playwright/packages/playwright-core \
   npm ci --omit=dev && \
   # Install system dependencies for playwright
   npx -y playwright-core install-deps chromium
@@ -30,6 +32,8 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked,id=npm-cache \
     --mount=type=bind,source=package.json,target=package.json \
     --mount=type=bind,source=package-lock.json,target=package-lock.json \
     --mount=type=bind,source=packages/playwright-mcp/package.json,target=packages/playwright-mcp/package.json \
+    --mount=type=bind,source=playwright/packages/playwright,target=playwright/packages/playwright \
+    --mount=type=bind,source=playwright/packages/playwright-core,target=playwright/packages/playwright-core \
   npm ci
 
 # Copy the rest of the app

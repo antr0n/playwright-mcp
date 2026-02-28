@@ -1,0 +1,4 @@
+[submodule "playwright"]
+	path = playwright
+	url = https://github.com/KeySmash-LLC/playwright.git
+	branch = main
