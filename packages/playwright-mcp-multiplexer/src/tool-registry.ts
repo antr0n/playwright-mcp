@@ -63,6 +63,7 @@ const MANAGEMENT_TOOL_NAMES = new Set(MANAGEMENT_TOOLS.map(t => t.name));
 
 export class ToolRegistry {
   private proxyTools: Tool[] = [];
+  private proxyToolNames = new Set<string>();
   private allTools: Tool[] = [];
   private initialized = false;
 
@@ -79,6 +80,7 @@ export class ToolRegistry {
     const childTools = result.tools;
 
     this.proxyTools = childTools.map(tool => this.augmentWithInstanceId(tool));
+    this.proxyToolNames = new Set(childTools.map(t => t.name));
     this.allTools = [...MANAGEMENT_TOOLS, ...this.proxyTools];
     this.initialized = true;
   }
@@ -92,7 +94,7 @@ export class ToolRegistry {
   }
 
   isProxyTool(name: string): boolean {
-    return this.proxyTools.some(t => t.name === name);
+    return this.proxyToolNames.has(name);
   }
 
   private augmentWithInstanceId(tool: Tool): Tool {

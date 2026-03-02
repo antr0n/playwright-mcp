@@ -2,6 +2,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 export declare class ToolRegistry {
     private proxyTools;
+    private proxyToolNames;
     private allTools;
     private initialized;
     isManagementTool(name: string): boolean;
