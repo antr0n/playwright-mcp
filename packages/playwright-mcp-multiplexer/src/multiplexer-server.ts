@@ -18,6 +18,7 @@ export class MultiplexerServer {
   private toolRegistry: ToolRegistry;
   private toolRouter: ToolRouter;
   private authManager: AuthManager;
+  private discoveryPromise: Promise<void> | null = null;
 
   constructor(config: MultiplexerConfig = {}) {
     this.instanceManager = new InstanceManager(config);
@@ -89,7 +90,7 @@ export class MultiplexerServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       // Lazy discovery: on first call, spawn a probe instance to discover tools
       if (!this.toolRegistry.isInitialized()) {
-        await this.discoverTools();
+        await this.ensureToolsDiscovered();
       }
 
       return { tools: this.toolRegistry.getTools() };
@@ -105,15 +106,27 @@ export class MultiplexerServer {
           const result = await this.toolRouter.route(name, args as Record<string, unknown> | undefined);
           // After instance_create, we now have an instance to discover from
           if (name === 'instance_create')
-            await this.discoverTools();
+            await this.ensureToolsDiscovered();
           return result as unknown as Record<string, unknown>;
         }
-        await this.discoverTools();
+        await this.ensureToolsDiscovered();
       }
 
       const result = await this.toolRouter.route(name, args as Record<string, unknown> | undefined);
       return result as unknown as Record<string, unknown>;
     });
+  }
+
+  private async ensureToolsDiscovered(): Promise<void> {
+    if (this.toolRegistry.isInitialized()) return;
+    if (!this.discoveryPromise) {
+      this.discoveryPromise = this.discoverTools().catch(err => {
+        // Allow retry on failure by resetting the cached promise
+        this.discoveryPromise = null;
+        throw err;
+      });
+    }
+    return this.discoveryPromise;
   }
 
   private async discoverTools(): Promise<void> {

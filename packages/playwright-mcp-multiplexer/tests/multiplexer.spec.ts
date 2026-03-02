@@ -314,6 +314,53 @@ test.describe('Multiplexer MCP Server', () => {
     });
   });
 
+  test.describe('concurrent discovery', () => {
+    test('should handle simultaneous list_tools and call_tool requests without error', async () => {
+      // Fire list_tools and instance_create simultaneously before discovery completes.
+      // Both should succeed and tools should be fully populated afterwards.
+      const { client, cleanup } = await createMultiplexerClient();
+      try {
+        const [listResult, createResult] = await Promise.all([
+          client.listTools(),
+          client.callTool({ name: 'instance_create', arguments: {} }),
+        ]);
+
+        // list_tools should have returned the full tool set
+        const toolNames = listResult.tools.map(t => t.name);
+        expect(toolNames).toContain('instance_create');
+        expect(toolNames).toContain('browser_navigate');
+        expect(toolNames).toContain('browser_snapshot');
+
+        // instance_create should have succeeded
+        const createText = (createResult.content as Array<{ text: string }>)[0].text;
+        expect(createText).toContain('Created browser instance');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    test('should deduplicate concurrent list_tools calls so both callers get identical tools', async () => {
+      const { client, cleanup } = await createMultiplexerClient();
+      try {
+        // Fire two list_tools requests back-to-back before the first can complete
+        const [result1, result2] = await Promise.all([
+          client.listTools(),
+          client.listTools(),
+        ]);
+
+        const names1 = result1.tools.map(t => t.name).sort();
+        const names2 = result2.tools.map(t => t.name).sort();
+
+        // Both should have received the identical tool list
+        expect(names1).toEqual(names2);
+        expect(names1).toContain('browser_navigate');
+        expect(names1).toContain('instance_create');
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   test.describe('auth export', () => {
     test('should export storage state from an instance', async () => {
       const { client, cleanup } = await createMultiplexerClient();
