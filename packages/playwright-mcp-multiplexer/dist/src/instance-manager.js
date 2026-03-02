@@ -193,7 +193,13 @@ export class InstanceManager {
     }
     async closeAll() {
         const ids = Array.from(this.instances.keys());
-        await Promise.all(ids.map(id => this.close(id)));
+        const results = await Promise.allSettled(ids.map(id => this.close(id)));
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            if (result.status === 'rejected') {
+                process.stderr.write(`Failed to close instance ${ids[i]}: ${result.reason}\n`);
+            }
+        }
     }
     getConfig() {
         return this.config;

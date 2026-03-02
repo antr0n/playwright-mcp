@@ -37,7 +37,14 @@ export class VirtualDisplayManager {
         });
     }
     async releaseAll() {
-        await Promise.all([...this.displays.keys()].map(n => this.release(`:${n}`)));
+        const nums = [...this.displays.keys()];
+        const results = await Promise.allSettled(nums.map(n => this.release(`:${n}`)));
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            if (result.status === 'rejected') {
+                process.stderr.write(`Failed to release virtual display :${nums[i]}: ${result.reason}\n`);
+            }
+        }
     }
     findFreeNum() {
         for (let n = DISPLAY_RANGE_START; n <= DISPLAY_RANGE_END; n++) {
