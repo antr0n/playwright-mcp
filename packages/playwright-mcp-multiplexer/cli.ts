@@ -40,15 +40,18 @@ async function main() {
   const server = new MultiplexerServer(config);
   const transport = new StdioServerTransport();
 
-  // Graceful shutdown
-  process.on('SIGINT', async () => {
+  // Graceful shutdown — guard against re-entrant signals (e.g. double Ctrl+C)
+  let shuttingDown = false;
+
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
     await server.close();
     process.exit(0);
-  });
-  process.on('SIGTERM', async () => {
-    await server.close();
-    process.exit(0);
-  });
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   await server.connect(transport);
 }
