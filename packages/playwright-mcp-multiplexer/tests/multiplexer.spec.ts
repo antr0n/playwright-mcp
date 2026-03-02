@@ -187,19 +187,62 @@ test.describe('Multiplexer MCP Server', () => {
   });
 
   test.describe('error handling', () => {
-    test('should return error for invalid instanceId', async () => {
+    test('should return isError:true for non-existent instanceId', async () => {
       const { client, cleanup } = await createMultiplexerClient();
       try {
         // Force tool discovery by listing tools first
         await client.listTools();
 
-        // Try to navigate with a non-existent instance
-        await expect(
-          client.callTool({
-            name: 'browser_navigate',
-            arguments: { instanceId: 'inst-nonexistent', url: 'data:text/html,<h1>test</h1>' },
-          })
-        ).rejects.toThrow();
+        // Try to navigate with a non-existent instance — should return isError: true, not throw
+        const result = await client.callTool({
+          name: 'browser_navigate',
+          arguments: { instanceId: 'inst-nonexistent', url: 'data:text/html,<h1>test</h1>' },
+        });
+        expect(result.isError).toBe(true);
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain('inst-nonexistent');
+        expect(text).toContain('browser_navigate');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    test('should include tool name and instanceId in proxy error message', async () => {
+      const { client, cleanup } = await createMultiplexerClient();
+      try {
+        await client.listTools();
+
+        const result = await client.callTool({
+          name: 'browser_snapshot',
+          arguments: { instanceId: 'inst-missing' },
+        });
+        expect(result.isError).toBe(true);
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain('browser_snapshot');
+        expect(text).toContain('inst-missing');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    test('should return isError:true when calling proxy tool after instance is closed', async () => {
+      const { client, cleanup } = await createMultiplexerClient();
+      try {
+        // Create and then close an instance
+        const createResult = await client.callTool({ name: 'instance_create', arguments: {} });
+        const instanceId = ((createResult.content as Array<{ text: string }>)[0].text).match(/"(inst-\d+)"/)![1];
+
+        await client.callTool({ name: 'instance_close', arguments: { instanceId } });
+
+        // Now attempt to use the closed instance — should return isError: true
+        const result = await client.callTool({
+          name: 'browser_snapshot',
+          arguments: { instanceId },
+        });
+        expect(result.isError).toBe(true);
+        const text = (result.content as Array<{ text: string }>)[0].text;
+        expect(text).toContain(instanceId);
+        expect(text).toContain('browser_snapshot');
       } finally {
         await cleanup();
       }

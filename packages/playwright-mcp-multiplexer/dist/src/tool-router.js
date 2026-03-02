@@ -44,14 +44,25 @@ export class ToolRouter {
                 isError: true,
             };
         }
-        const instance = this.instanceManager.getOrThrow(instanceId);
-        // Strip instanceId before forwarding to child
-        const { instanceId: _, ...childArgs } = args;
-        const result = await instance.client.callTool({
-            name,
-            arguments: childArgs,
-        });
-        return result;
+        try {
+            const instance = this.instanceManager.getOrThrow(instanceId);
+            // Strip instanceId before forwarding to child
+            const { instanceId: _, ...childArgs } = args;
+            const result = await instance.client.callTool({
+                name,
+                arguments: childArgs,
+            });
+            return result;
+        }
+        catch (error) {
+            return {
+                content: [{
+                        type: 'text',
+                        text: `Error calling ${name} on instance "${instanceId}": ${error instanceof Error ? error.message : String(error)}`,
+                    }],
+                isError: true,
+            };
+        }
     }
     async handleInstanceCreate(args) {
         try {
