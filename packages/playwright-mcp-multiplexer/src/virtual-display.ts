@@ -13,11 +13,17 @@ const DISPLAY_RANGE_END = 99;
  */
 export class VirtualDisplayManager {
   private displays = new Map<number, ChildProcess>(); // displayNum → Xvfb process
+  private pending = new Set<number>(); // display nums being spawned (not yet in displays)
 
   async allocate(): Promise<string> {
     const num = this.findFreeNum();
-    await this.spawnXvfb(num);
-    return `:${num}`;
+    this.pending.add(num);
+    try {
+      await this.spawnXvfb(num);
+      return `:${num}`;
+    } finally {
+      this.pending.delete(num);
+    }
   }
 
   async release(display: string): Promise<void> {
@@ -58,6 +64,7 @@ export class VirtualDisplayManager {
   private findFreeNum(): number {
     for (let n = DISPLAY_RANGE_START; n <= DISPLAY_RANGE_END; n++) {
       if (this.displays.has(n)) continue;
+      if (this.pending.has(n)) continue;
       if (fs.existsSync(`/tmp/.X${n}-lock`)) continue;
       return n;
     }

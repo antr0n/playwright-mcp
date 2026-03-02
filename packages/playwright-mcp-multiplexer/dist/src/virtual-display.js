@@ -11,10 +11,17 @@ const DISPLAY_RANGE_END = 99;
  */
 export class VirtualDisplayManager {
     displays = new Map(); // displayNum → Xvfb process
+    pending = new Set(); // display nums being spawned (not yet in displays)
     async allocate() {
         const num = this.findFreeNum();
-        await this.spawnXvfb(num);
-        return `:${num}`;
+        this.pending.add(num);
+        try {
+            await this.spawnXvfb(num);
+            return `:${num}`;
+        }
+        finally {
+            this.pending.delete(num);
+        }
     }
     async release(display) {
         const num = parseInt(display.slice(1), 10);
@@ -48,10 +55,15 @@ export class VirtualDisplayManager {
     }
     findFreeNum() {
         for (let n = DISPLAY_RANGE_START; n <= DISPLAY_RANGE_END; n++) {
-            if (!this.displays.has(n))
-                return n;
+            if (this.displays.has(n))
+                continue;
+            if (this.pending.has(n))
+                continue;
+            if (fs.existsSync(`/tmp/.X${n}-lock`))
+                continue;
+            return n;
         }
-        throw new Error('No free virtual display slots available (:10–:99 all in use)');
+        throw new Error('No free virtual display slots available (:10–:99 all occupied by this process or system-wide lock files)');
     }
     spawnXvfb(num) {
         return new Promise((resolve, reject) => {

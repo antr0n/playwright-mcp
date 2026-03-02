@@ -7,6 +7,7 @@
  */
 export declare class VirtualDisplayManager {
     private displays;
+    private pending;
     allocate(): Promise<string>;
     release(display: string): Promise<void>;
     releaseAll(): Promise<void>;
