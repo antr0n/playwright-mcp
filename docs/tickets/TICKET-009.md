@@ -3,10 +3,10 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P1-High |
 | Effort | L (4-8hr) |
-| Assignee | Unassigned |
+| Assignee | Claude |
 
 ## Description
 Write comprehensive unit tests for the `AIDomBuilderInjection` function. Since this function runs inside a browser context via `page.evaluate()`, tests should use Playwright's test runner to create test pages with known DOM structures, run the builder, and verify the output HTML and iframe refs.

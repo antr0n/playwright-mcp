@@ -3,10 +3,10 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P0-Critical |
 | Effort | M (1-4hr) |
-| Assignee | Unassigned |
+| Assignee | Claude |
 
 ## Description
 Modify `context.ts` to add the `hasExplicitRoots()` method and create a `DomState` instance owned by `Context`. The `DomState` is created in the `Context` constructor and disposed during `Context.dispose()`, which deletes the `.playwright-mcp/browser-state/` directory on shutdown. This ticket also modifies `browserServerBackend.ts` to pass the `DomState` to `Response` instances.

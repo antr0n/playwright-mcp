@@ -3,7 +3,7 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P1-High |
 | Effort | M (1-4hr) |
 | Assignee | Unassigned |

@@ -3,10 +3,10 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P1-High |
 | Effort | M (1-4hr) |
-| Assignee | Unassigned |
+| Assignee | Claude |
 
 ## Description
 Write unit tests for the `prettyPrintHtml()` function from `domPrettyPrint.ts`. These tests verify that the HTML formatter produces deterministic, diff-friendly output: simple elements stay on one line, multi-attribute elements get force-aligned wrapping, indentation is consistent, and void elements have no closing tags.

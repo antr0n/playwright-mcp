@@ -3,10 +3,10 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P1-High |
 | Effort | M (1-4hr) |
-| Assignee | Unassigned |
+| Assignee | Claude |
 
 ## Description
 Write unit tests for the `DomState` class, focusing on the diffing logic, file I/O, diff file naming, workspace resolution, and lifecycle management. These tests verify that diffs are computed correctly, files are written to the expected locations, diff names are formatted properly, and `dispose()` cleans up the state directory.

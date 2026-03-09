@@ -3,10 +3,10 @@
 ## Metadata
 | Field | Value |
 |-------|-------|
-| Status | TODO |
+| Status | COMPLETED |
 | Priority | P1-High |
 | Effort | S (< 1hr) |
-| Assignee | Unassigned |
+| Assignee | Claude |
 
 ## Description
 Add `response.setIncludeSnapshot()` to the `browser_fill_form` tool handler so that form fill operations produce both the aria snapshot diff and the DOM state diff. Currently, `browser_fill_form` does not call `setIncludeSnapshot()`, so the response does not include a snapshot section and DOM state is not extracted. This is a one-line change.
