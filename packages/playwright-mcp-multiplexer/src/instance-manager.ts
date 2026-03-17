@@ -1,10 +1,31 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { execSync } from 'node:child_process';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ManagedInstance, InstanceConfig, MultiplexerConfig } from './types.js';
 import { VirtualDisplayManager } from './virtual-display.js';
+
+/**
+ * Find a Chrome remote debugging port that isn't already known.
+ * Scans /proc for Chrome/Chromium processes with --remote-debugging-port=NNNNN.
+ */
+async function findChromeDebugPort(knownPorts: Set<number>): Promise<number | undefined> {
+  try {
+    // /proc/*/cmdline uses null bytes as separators — tr converts them to spaces
+    const output = execSync(
+      `for f in /proc/*/cmdline; do tr '\\0' ' ' < "$f" 2>/dev/null; echo; done | grep -oP 'remote-debugging-port=\\K\\d+' | sort -u`,
+      { encoding: 'utf8', shell: '/bin/bash' },
+    );
+    for (const line of output.trim().split('\n')) {
+      const port = parseInt(line, 10);
+      if (port > 0 && !knownPorts.has(port))
+        return port;
+    }
+  } catch { /* /proc not available or other error */ }
+  return undefined;
+}
 
 function getProfileManifest(browser: string): { files: string[]; dirs: string[] } {
   if (browser === 'firefox') {
@@ -44,6 +65,7 @@ export class InstanceManager {
   private configFiles = new Map<string, string>();   // instanceId → temp config file path
   private virtualDisplays = new Map<string, string>(); // instanceId → ':N' display
   private virtualDisplayManager = new VirtualDisplayManager();
+  private _knownDebugPorts = new Set<number>();      // ports already assigned to instances
   private nextId = 1;
   private config: Required<MultiplexerConfig>;
   private workspaceRoot: string | undefined;
@@ -154,30 +176,15 @@ export class InstanceManager {
       instance.transport = transport;
       instance.client = client;
 
-      // Listen to child stderr for Chrome's DevTools debugging port.
-      // Chrome prints: "DevTools listening on ws://127.0.0.1:PORT/devtools/browser/..."
-      const stderrStream = (transport as unknown as { _process?: { stderr?: NodeJS.ReadableStream } })._process?.stderr;
-      if (stderrStream) {
-        stderrStream.on('data', (chunk: Buffer) => {
-          const text = chunk.toString();
-          process.stderr.write(text);
-          if (!instance.debugPort) {
-            const match = text.match(/DevTools listening on ws:\/\/[^:]+:(\d+)\//);
-            if (match)
-              instance.debugPort = parseInt(match[1], 10);
-          }
-        });
-      }
-
       await client.connect(transport);
       await client.ping();
 
-      // Wait briefly for Chrome's DevTools port to appear on stderr.
-      // Usually arrives within 1-2s of Chrome launch.
-      if (!instance.debugPort) {
-        for (let i = 0; i < 10 && !instance.debugPort; i++)
-          await new Promise(r => setTimeout(r, 200));
-      }
+      // Resolve Chrome's remote debugging port. After ping(), Chrome is running.
+      // Scan all chrome/chromium processes for --remote-debugging-port=NNNNN.
+      // We track known ports to avoid returning a stale port from a previous instance.
+      instance.debugPort = await findChromeDebugPort(this._knownDebugPorts);
+      if (instance.debugPort)
+        this._knownDebugPorts.add(instance.debugPort);
 
       instance.status = 'ready';
       return instance;
@@ -323,6 +330,9 @@ export class InstanceManager {
       // via DevTools frontend) can connect and show a live view.
       // Port 0 = OS picks a free port; the actual port is logged to stderr.
       launchArgs.push('--remote-debugging-port=0');
+      // Allow WebSocket connections from any origin (Electron renderer at
+      // localhost:1420 needs to connect for CDP screencast).
+      launchArgs.push('--remote-allow-origins=*');
     }
 
     const config: Record<string, unknown> = {
