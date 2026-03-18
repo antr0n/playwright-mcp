@@ -85,6 +85,9 @@ class ToolRouter {
             if (useExtension) {
                 description = `Created browser instance "${instance.id}" (extension)`;
             }
+            else if (effectiveConfig.electronMode && instance.viewId) {
+                description = `Created browser instance "${instance.id}" (Electron view: ${instance.viewId}, target: ${instance.targetUrl})`;
+            }
             else if (effectiveConfig.electronMode && cdpEndpoint) {
                 description = `Created browser instance "${instance.id}" (Electron CDP: ${cdpEndpoint}, isolated context)`;
             }
@@ -96,10 +99,20 @@ class ToolRouter {
                 const headless = instance.config.headless ?? effectiveConfig.defaultHeadless;
                 description = `Created browser instance "${instance.id}" (${browser}, ${headless ? 'headless' : 'headed'})`;
             }
+            const result = {
+                instanceId: instance.id,
+                description,
+            };
+            if (instance.debugPort)
+                result.debugPort = instance.debugPort;
+            if (instance.viewId)
+                result.viewId = instance.viewId;
+            if (instance.targetUrl)
+                result.targetUrl = instance.targetUrl;
             return {
                 content: [{
                         type: 'text',
-                        text: description,
+                        text: JSON.stringify(result),
                     }],
             };
         }

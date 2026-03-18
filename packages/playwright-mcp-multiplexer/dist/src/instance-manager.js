@@ -7,9 +7,27 @@ exports.InstanceManager = void 0;
 const node_path_1 = __importDefault(require("node:path"));
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
+const node_child_process_1 = require("node:child_process");
 const stdio_js_1 = require("@modelcontextprotocol/sdk/client/stdio.js");
 const index_js_1 = require("@modelcontextprotocol/sdk/client/index.js");
 const virtual_display_js_1 = require("./virtual-display.js");
+/**
+ * Find a Chrome remote debugging port that isn't already known.
+ * Scans /proc for Chrome/Chromium processes with --remote-debugging-port=NNNNN.
+ */
+async function findChromeDebugPort(knownPorts) {
+    try {
+        // /proc/*/cmdline uses null bytes as separators — tr converts them to spaces
+        const output = (0, node_child_process_1.execSync)(`for f in /proc/*/cmdline; do tr '\\0' ' ' < "$f" 2>/dev/null; echo; done | grep -oP 'remote-debugging-port=\\K\\d+' | sort -u`, { encoding: 'utf8', shell: '/bin/bash' });
+        for (const line of output.trim().split('\n')) {
+            const port = parseInt(line, 10);
+            if (port > 0 && !knownPorts.has(port))
+                return port;
+        }
+    }
+    catch { /* /proc not available or other error */ }
+    return undefined;
+}
 function getProfileManifest(browser) {
     if (browser === 'firefox') {
         return {
@@ -47,9 +65,11 @@ class InstanceManager {
     configFiles = new Map(); // instanceId → temp config file path
     virtualDisplays = new Map(); // instanceId → ':N' display
     virtualDisplayManager = new virtual_display_js_1.VirtualDisplayManager();
+    _knownDebugPorts = new Set(); // ports already assigned to instances
     nextId = 1;
     config;
     workspaceRoot;
+    electronViews = new Map(); // instanceId → viewId
     constructor(config = {}) {
         const electronMode = config.electronMode ?? false;
         this.config = {
@@ -64,6 +84,7 @@ class InstanceManager {
             extension: config.extension ?? false,
             executablePath: config.executablePath ?? '',
             electronMode,
+            viewManagerUrl: config.viewManagerUrl ?? 'http://127.0.0.1:3002',
         };
     }
     /**
@@ -78,7 +99,13 @@ class InstanceManager {
             throw new Error(`Maximum number of instances (${this.config.maxInstances}) reached`);
         }
         const id = `inst-${this.nextId++}`;
-        const args = await this.buildArgs(id, instanceConfig);
+        // In Electron mode, create a WebContentsView via the ViewManager before spawning
+        let viewData;
+        if (this.config.electronMode) {
+            viewData = await this.createElectronView();
+            this.electronViews.set(id, viewData.id);
+        }
+        const args = await this.buildArgs(id, instanceConfig, viewData?.targetUrl);
         // Use --storage-state CLI flag directly (no temp config file needed)
         if (instanceConfig.storageState) {
             args.push(`--storage-state=${instanceConfig.storageState}`);
@@ -90,6 +117,8 @@ class InstanceManager {
             config: instanceConfig,
             createdAt: Date.now(),
             status: 'starting',
+            viewId: viewData?.id,
+            targetUrl: viewData?.targetUrl,
         };
         this.instances.set(id, instance);
         try {
@@ -145,12 +174,22 @@ class InstanceManager {
             instance.client = client;
             await client.connect(transport);
             await client.ping();
+            // Resolve Chrome's remote debugging port. After ping(), Chrome is running.
+            // Scan all chrome/chromium processes for --remote-debugging-port=NNNNN.
+            // We track known ports to avoid returning a stale port from a previous instance.
+            instance.debugPort = await findChromeDebugPort(this._knownDebugPorts);
+            if (instance.debugPort)
+                this._knownDebugPorts.add(instance.debugPort);
             instance.status = 'ready';
             return instance;
         }
         catch (error) {
             this.instances.delete(id);
             await this.cleanupProfile(id);
+            if (viewData) {
+                this.electronViews.delete(id);
+                await this.destroyElectronView(viewData.id);
+            }
             throw new Error(`Failed to create instance ${id}: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
@@ -189,6 +228,11 @@ class InstanceManager {
             this.virtualDisplays.delete(id);
             await this.virtualDisplayManager.release(virtualDisplay);
         }
+        const viewId = this.electronViews.get(id);
+        if (viewId) {
+            this.electronViews.delete(id);
+            await this.destroyElectronView(viewId);
+        }
     }
     async closeAll() {
         const ids = Array.from(this.instances.keys());
@@ -203,7 +247,7 @@ class InstanceManager {
     getConfig() {
         return this.config;
     }
-    async buildArgs(instanceId, instanceConfig) {
+    async buildArgs(instanceId, instanceConfig, targetUrl) {
         // Extension mode: connect to running Chrome via browser extension
         const useExtension = instanceConfig.extension ?? this.config.extension;
         if (useExtension)
@@ -217,8 +261,13 @@ class InstanceManager {
             // automation sessions. The --isolated flag tells @playwright/mcp's
             // CdpContextFactory to call browser.newContext() instead of reusing
             // the default context (browser.contexts()[0]).
-            if (this.config.electronMode)
+            if (this.config.electronMode) {
                 args.push('--isolated');
+                // Include --target-url so the child only controls the assigned page
+                const effectiveTargetUrl = targetUrl ?? instanceConfig.targetUrl;
+                if (effectiveTargetUrl)
+                    args.push(`--target-url=${effectiveTargetUrl}`);
+            }
             return args;
         }
         const args = [];
@@ -266,6 +315,13 @@ class InstanceManager {
             // WM_CLASS for window manager routing via Hyprland workspace rules.
             // Routes all instances to workspace 9 so they don't steal focus.
             launchArgs.push('--class=pw-mux');
+            // Expose a CDP debugging port so external tools (e.g. Electron webview
+            // via DevTools frontend) can connect and show a live view.
+            // Port 0 = OS picks a free port; the actual port is logged to stderr.
+            launchArgs.push('--remote-debugging-port=0');
+            // Allow WebSocket connections from any origin (Electron renderer at
+            // localhost:1420 needs to connect for CDP screencast).
+            launchArgs.push('--remote-allow-origins=*');
         }
         const config = {
             browser: {
@@ -342,6 +398,28 @@ class InstanceManager {
         }
         this.profileDirs.set(instanceId, profileRoot);
         return profileRoot;
+    }
+    async createElectronView() {
+        const url = this.config.viewManagerUrl || 'http://127.0.0.1:3002';
+        console.error(`[mux] creating Electron view via ${url}/views`);
+        const response = await fetch(`${url}/views`, { method: 'POST' });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`ViewManager POST /views failed (${response.status}): ${text}`);
+        }
+        const data = await response.json();
+        console.error(`[mux] created view ${data.id} (wcid=${data.wcid}, targetUrl=${data.targetUrl})`);
+        return data;
+    }
+    async destroyElectronView(viewId) {
+        const url = this.config.viewManagerUrl || 'http://127.0.0.1:3002';
+        console.error(`[mux] destroying Electron view ${viewId}`);
+        try {
+            await fetch(`${url}/views/${viewId}`, { method: 'DELETE' });
+        }
+        catch (err) {
+            console.error(`[mux] failed to destroy view ${viewId}:`, err);
+        }
     }
     async cleanupProfile(instanceId) {
         const profileDir = this.profileDirs.get(instanceId);

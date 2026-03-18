@@ -5,9 +5,11 @@ export declare class InstanceManager {
     private configFiles;
     private virtualDisplays;
     private virtualDisplayManager;
+    private _knownDebugPorts;
     private nextId;
     private config;
     private workspaceRoot;
+    private electronViews;
     constructor(config?: MultiplexerConfig);
     /**
      * Set the workspace root path from the MCP client's roots.
@@ -24,6 +26,8 @@ export declare class InstanceManager {
     private buildArgs;
     private createLaunchConfig;
     private copyProfile;
+    private createElectronView;
+    private destroyElectronView;
     private cleanupProfile;
 }
 //# sourceMappingURL=instance-manager.d.ts.map

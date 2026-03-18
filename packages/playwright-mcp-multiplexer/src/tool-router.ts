@@ -93,6 +93,8 @@ export class ToolRouter {
       let description: string;
       if (useExtension) {
         description = `Created browser instance "${instance.id}" (extension)`;
+      } else if (effectiveConfig.electronMode && instance.viewId) {
+        description = `Created browser instance "${instance.id}" (Electron view: ${instance.viewId}, target: ${instance.targetUrl})`;
       } else if (effectiveConfig.electronMode && cdpEndpoint) {
         description = `Created browser instance "${instance.id}" (Electron CDP: ${cdpEndpoint}, isolated context)`;
       } else if (cdpEndpoint) {
@@ -109,6 +111,10 @@ export class ToolRouter {
       };
       if (instance.debugPort)
         result.debugPort = instance.debugPort;
+      if (instance.viewId)
+        result.viewId = instance.viewId;
+      if (instance.targetUrl)
+        result.targetUrl = instance.targetUrl;
 
       return {
         content: [{

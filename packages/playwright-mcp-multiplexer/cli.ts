@@ -40,6 +40,8 @@ function parseArgs(argv: string[]): MultiplexerConfig {
       config.executablePath = arg.split('=').slice(1).join('=');
     else if (arg === '--electron-mode')
       config.electronMode = true;
+    else if (arg.startsWith('--view-manager-url='))
+      config.viewManagerUrl = arg.split('=').slice(1).join('=');
   }
 
   return config;

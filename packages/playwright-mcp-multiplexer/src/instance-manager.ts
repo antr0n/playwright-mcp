@@ -69,6 +69,7 @@ export class InstanceManager {
   private nextId = 1;
   private config: Required<MultiplexerConfig>;
   private workspaceRoot: string | undefined;
+  private electronViews = new Map<string, string>();  // instanceId → viewId
 
   constructor(config: MultiplexerConfig = {}) {
     const electronMode = config.electronMode ?? false;
@@ -84,6 +85,7 @@ export class InstanceManager {
       extension: config.extension ?? false,
       executablePath: config.executablePath ?? '',
       electronMode,
+      viewManagerUrl: config.viewManagerUrl ?? 'http://127.0.0.1:3002',
     };
   }
 
@@ -101,7 +103,15 @@ export class InstanceManager {
     }
 
     const id = `inst-${this.nextId++}`;
-    const args = await this.buildArgs(id, instanceConfig);
+
+    // In Electron mode, create a WebContentsView via the ViewManager before spawning
+    let viewData: { id: string; wcid: number; targetUrl: string } | undefined;
+    if (this.config.electronMode) {
+      viewData = await this.createElectronView();
+      this.electronViews.set(id, viewData.id);
+    }
+
+    const args = await this.buildArgs(id, instanceConfig, viewData?.targetUrl);
 
     // Use --storage-state CLI flag directly (no temp config file needed)
     if (instanceConfig.storageState) {
@@ -115,6 +125,8 @@ export class InstanceManager {
       config: instanceConfig,
       createdAt: Date.now(),
       status: 'starting',
+      viewId: viewData?.id,
+      targetUrl: viewData?.targetUrl,
     };
 
     this.instances.set(id, instance);
@@ -191,6 +203,10 @@ export class InstanceManager {
     } catch (error) {
       this.instances.delete(id);
       await this.cleanupProfile(id);
+      if (viewData) {
+        this.electronViews.delete(id);
+        await this.destroyElectronView(viewData.id);
+      }
       throw new Error(`Failed to create instance ${id}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -236,6 +252,12 @@ export class InstanceManager {
       this.virtualDisplays.delete(id);
       await this.virtualDisplayManager.release(virtualDisplay);
     }
+
+    const viewId = this.electronViews.get(id);
+    if (viewId) {
+      this.electronViews.delete(id);
+      await this.destroyElectronView(viewId);
+    }
   }
 
   async closeAll(): Promise<void> {
@@ -253,7 +275,7 @@ export class InstanceManager {
     return this.config;
   }
 
-  private async buildArgs(instanceId: string, instanceConfig: InstanceConfig): Promise<string[]> {
+  private async buildArgs(instanceId: string, instanceConfig: InstanceConfig, targetUrl?: string): Promise<string[]> {
     // Extension mode: connect to running Chrome via browser extension
     const useExtension = instanceConfig.extension ?? this.config.extension;
     if (useExtension)
@@ -268,8 +290,13 @@ export class InstanceManager {
       // automation sessions. The --isolated flag tells @playwright/mcp's
       // CdpContextFactory to call browser.newContext() instead of reusing
       // the default context (browser.contexts()[0]).
-      if (this.config.electronMode)
+      if (this.config.electronMode) {
         args.push('--isolated');
+        // Include --target-url so the child only controls the assigned page
+        const effectiveTargetUrl = targetUrl ?? instanceConfig.targetUrl;
+        if (effectiveTargetUrl)
+          args.push(`--target-url=${effectiveTargetUrl}`);
+      }
       return args;
     }
 
@@ -414,6 +441,30 @@ export class InstanceManager {
 
     this.profileDirs.set(instanceId, profileRoot);
     return profileRoot;
+  }
+
+  private async createElectronView(): Promise<{ id: string; wcid: number; targetUrl: string }> {
+    const url = this.config.viewManagerUrl || 'http://127.0.0.1:3002';
+    console.error(`[mux] creating Electron view via ${url}/views`);
+
+    const response = await fetch(`${url}/views`, { method: 'POST' });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`ViewManager POST /views failed (${response.status}): ${text}`);
+    }
+    const data = await response.json() as { id: string; wcid: number; targetUrl: string };
+    console.error(`[mux] created view ${data.id} (wcid=${data.wcid}, targetUrl=${data.targetUrl})`);
+    return data;
+  }
+
+  private async destroyElectronView(viewId: string): Promise<void> {
+    const url = this.config.viewManagerUrl || 'http://127.0.0.1:3002';
+    console.error(`[mux] destroying Electron view ${viewId}`);
+    try {
+      await fetch(`${url}/views/${viewId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error(`[mux] failed to destroy view ${viewId}:`, err);
+    }
   }
 
   private async cleanupProfile(instanceId: string): Promise<void> {

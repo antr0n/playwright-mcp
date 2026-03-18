@@ -13,6 +13,10 @@ export interface ManagedInstance {
   status: InstanceStatus;
   /** Chrome's remote debugging port (0 = not available). */
   debugPort?: number;
+  /** Electron ViewManager view ID (electron mode only). */
+  viewId?: string;
+  /** Target URL for page filtering in electron mode. */
+  targetUrl?: string;
 }
 
 export interface InstanceConfig {
@@ -25,6 +29,8 @@ export interface InstanceConfig {
   extension?: boolean;
   args?: string[];
   domState?: boolean;
+  /** Target URL for page filtering in electron mode */
+  targetUrl?: string;
 }
 
 export interface MultiplexerConfig {
@@ -52,6 +58,8 @@ export interface MultiplexerConfig {
    *   - If no cdpEndpoint is configured, defaults to http://127.0.0.1:9222.
    */
   electronMode?: boolean;
+  /** URL of the Electron ViewManager HTTP API (default: http://127.0.0.1:3002) */
+  viewManagerUrl?: string;
 }
 
 export interface AugmentedTool extends Tool {
