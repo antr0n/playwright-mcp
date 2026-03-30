@@ -38,8 +38,11 @@ function parseArgs(argv: string[]): MultiplexerConfig {
       config.extension = true;
     else if (arg.startsWith('--executable-path='))
       config.executablePath = arg.split('=').slice(1).join('=');
-    else if (arg.startsWith('--init-script='))
-      config.initScript = arg.split('=').slice(1).join('=');
+    else if (arg.startsWith('--init-script=')) {
+      const scriptPath = arg.split('=').slice(1).join('=');
+      config.initScript = [...(config.initScript ?? []), scriptPath];
+    } else if (arg === '--bypass-csp')
+      config.bypassCSP = true;
   }
 
   return config;

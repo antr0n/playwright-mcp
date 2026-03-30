@@ -60,6 +60,8 @@ export class InstanceManager {
       cdpEndpoint: config.cdpEndpoint ?? '',
       extension: config.extension ?? false,
       executablePath: config.executablePath ?? '',
+      initScript: (config.initScript ?? []).map(s => path.resolve(s)),
+      bypassCSP: config.bypassCSP ?? false,
     };
   }
 
@@ -254,8 +256,10 @@ export class InstanceManager {
       args.push('--isolated');
     }
 
-    // Always create a launch config with flags needed for profile copying.
-    const configPath = await this.createLaunchConfig(instanceId, browser);
+    // Always create a launch config with flags needed for profile copying,
+    // bypassCSP, and initScript — @playwright/mcp reads these from the JSON
+    // config file, not from CLI args.
+    const configPath = await this.createLaunchConfig(instanceId, browser, instanceConfig);
     args.push(`--config=${configPath}`);
 
     if (process.env.CI && process.platform === 'linux')
@@ -264,14 +268,10 @@ export class InstanceManager {
     if (instanceConfig.args)
       args.push(...instanceConfig.args);
 
-    const initScript = instanceConfig.initScript ?? this.config.initScript;
-    if (initScript)
-      args.push(`--init-script=${initScript}`);
-
     return args;
   }
 
-  private async createLaunchConfig(instanceId: string, browser: string): Promise<string> {
+  private async createLaunchConfig(instanceId: string, browser: string, instanceConfig: InstanceConfig = {}): Promise<string> {
     const tmpDir = path.join(os.tmpdir(), 'pw-mux');
     await fs.promises.mkdir(tmpDir, { recursive: true });
 
@@ -289,17 +289,27 @@ export class InstanceManager {
       launchArgs.push('--class=pw-mux');
     }
 
-    const config: Record<string, unknown> = {
-      browser: {
-        launchOptions: {
-          // Always launch Chrome in headed mode. "Headless" instances use an Xvfb
-          // virtual display (DISPLAY=:N) so Chrome remains invisible without using
-          // Chrome's headless flag — same rendering engine, no bot-detection signal.
-          headless: false,
-          args: launchArgs,
-        },
+    const browserConfig: Record<string, unknown> = {
+      launchOptions: {
+        // Always launch Chrome in headed mode. "Headless" instances use an Xvfb
+        // virtual display (DISPLAY=:N) so Chrome remains invisible without using
+        // Chrome's headless flag — same rendering engine, no bot-detection signal.
+        headless: false,
+        args: launchArgs,
       },
     };
+
+    const effectiveBypassCSP = instanceConfig.bypassCSP ?? this.config.bypassCSP;
+    if (effectiveBypassCSP)
+      browserConfig.contextOptions = { bypassCSP: true };
+
+    // initScript is read from the JSON config by @playwright/mcp — passing it
+    // as a CLI arg (--init-script=) does nothing; the child process ignores it.
+    const effectiveInitScript = instanceConfig.initScript ?? this.config.initScript;
+    if (effectiveInitScript?.length)
+      browserConfig.initScript = effectiveInitScript;
+
+    const config: Record<string, unknown> = { browser: browserConfig };
 
     await fs.promises.writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
     this.configFiles.set(instanceId, configPath);

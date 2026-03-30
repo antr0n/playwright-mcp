@@ -23,7 +23,10 @@ export interface InstanceConfig {
   extension?: boolean;
   args?: string[];
   domState?: boolean;
-  initScript?: string;
+  /** Paths to JS files to inject into every page via @playwright/mcp's initScript config option. */
+  initScript?: string[];
+  /** Set bypassCSP on the browser context — required for injecting scripts on CSP-protected pages. */
+  bypassCSP?: boolean;
 }
 
 export interface MultiplexerConfig {
@@ -37,7 +40,10 @@ export interface MultiplexerConfig {
   cdpEndpoint?: string;
   extension?: boolean;
   executablePath?: string;
-  initScript?: string;
+  /** Paths to JS files to inject into every page via @playwright/mcp's initScript config option. */
+  initScript?: string[];
+  /** Set bypassCSP on the browser context — required for injecting scripts on CSP-protected pages. */
+  bypassCSP?: boolean;
 }
 
 export interface AugmentedTool extends Tool {
